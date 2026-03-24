@@ -3,6 +3,7 @@
 :root {
   --primary: #4F46E5;
   --primary-hover: #4338CA;
+  --primary-light: rgba(79, 70, 229, 0.1);
   --bg-color: #F8FAFC;
   --surface-color: #FFFFFF;
   --text-main: #0F172A;
@@ -12,7 +13,10 @@
   --border-color: #E2E8F0;
   --radius: 12px;
   --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-  --shadow-hover: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  --shadow-hover: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 10px 10px -5px rgb(0 0 0 / 0.04);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-blur: blur(16px);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -41,8 +45,9 @@ a { text-decoration: none; color: inherit; }
 
 /* Main Layout */
 .layout { display: flex; height: 100vh; overflow: hidden; }
-.sidebar { width: var(--sidebar-w); background: var(--surface-color); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; transition: all 0.3s ease; z-index: 10; }
-.sidebar-logo { padding: 1.5rem 2rem; font-size: 1.5rem; font-weight: 800; color: var(--primary); display: flex; align-items: center; gap: 0.75rem; }
+.sidebar { width: var(--sidebar-w); background: var(--surface-color); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 10; }
+.layout.sidebar-collapsed .sidebar { width: 80px; }
+.sidebar-logo { font-size: 1.5rem; font-weight: 800; color: var(--primary); display: flex; align-items: center; gap: 0.75rem; transition: padding 0.3s ease; }
 
 .nav-links { flex: 1; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; }
 .nav-item { display: flex; align-items: center; gap: 1rem; padding: 0.875rem 1rem; color: var(--text-muted); border-radius: var(--radius); transition: all 0.2s; font-weight: 500; }
@@ -52,10 +57,10 @@ a { text-decoration: none; color: inherit; }
 .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-color); }
 .header { height: var(--header-h); background: rgba(255,255,255,0.8); backdrop-filter: blur(12px); padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-color); z-index: 5; }
 
-.user-profile { display: flex; align-items: center; gap: 1rem; }
-.avatar { width: 40px; height: 40px; background: #C7D2FE; color: var(--primary); rounded: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: 50%; }
+.user-profile { display: flex; align-items: center; gap: 1rem; margin-left: auto; }
+.avatar { width: 40px; height: 40px; background: #C7D2FE; color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: 50%; }
 
-.page-content { flex: 1; padding: 2rem; overflow-y: auto; }
+.page-content { flex: 1; padding: 2rem; overflow-y: auto; overflow-x: hidden; }
 .page-title { font-size: 1.875rem; font-weight: 700; margin-bottom: 1.5rem; color: var(--text-main); }
 .page-subtitle { font-size: 1rem; color: var(--text-muted); margin-top: -1rem; margin-bottom: 2rem; }
 
@@ -100,3 +105,26 @@ a { text-decoration: none; color: inherit; }
 /* Animations */
 @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 .animate-slide-up { animation: slideUp 0.4s ease-out forwards; }
+
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.loading-spinner {
+  width: 40px; height: 40px; border: 3px solid var(--border-color);
+  border-top-color: var(--primary); border-radius: 50%;
+  animation: spin 1s linear infinite; margin: 0 auto;
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+}
+
+.premium-gradient-text {
+  background: linear-gradient(135deg, var(--primary) 0%, #818CF8 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
