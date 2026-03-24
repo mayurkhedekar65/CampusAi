@@ -109,3 +109,42 @@ class SubjectAttendanceView(views.APIView):
             return Response({'total_sessions': sessions, 'attended': attended})
             
         return Response({'error': 'Summary only for students currently'}, status=status.HTTP_400_BAD_REQUEST)
+
+class AttendanceSummaryView(views.APIView):
+    permission_classes = [IsStudent]
+
+    def get(self, request):
+        user = request.user
+        if not user.department or not user.semester:
+            return Response({'error': 'Student must be enrolled in a department and semester'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        subjects = Subject.objects.filter(department=user.department, semester=user.semester)
+        
+        subject_data = []
+        total_overall = 0
+        attended_overall = 0
+        
+        for sub in subjects:
+            total_sessions = AttendanceSession.objects.filter(subject=sub).count()
+            attended = Attendance.objects.filter(student=user, session__subject=sub).count()
+            
+            total_overall += total_sessions
+            attended_overall += attended
+            
+            percentage = round((attended / total_sessions * 100), 1) if total_sessions > 0 else 0
+            
+            subject_data.append({
+                'id': sub.id,
+                'name': sub.name,
+                'total': total_sessions,
+                'attended': attended,
+                'percentage': percentage,
+                'status': 'low' if percentage < 75 else 'high'
+            })
+            
+        overall_percentage = round((attended_overall / total_overall * 100), 1) if total_overall > 0 else 0
+        
+        return Response({
+            'overall_percentage': overall_percentage,
+            'subjects': subject_data
+        })
