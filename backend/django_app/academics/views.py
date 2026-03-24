@@ -1,4 +1,6 @@
 from rest_framework import viewsets, permissions
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from .models import Department, Subject
 from .serializers import DepartmentSerializer, SubjectSerializer
 
@@ -34,3 +36,22 @@ class SubjectViewSet(viewsets.ModelViewSet):
         if department:
             qs = qs.filter(department_id=department)
         return qs
+
+    @action(detail=False, methods=['get'])
+    def my_subjects(self, request):
+        user = request.user
+        qs = self.get_queryset()
+        
+        if user.role == 'STUDENT':
+            # Students see subjects for their department and semester
+            if user.department and user.semester:
+                qs = qs.filter(department=user.department, semester=user.semester)
+            else:
+                qs = qs.none()
+        elif user.role == 'TEACHER':
+            # Teachers see subjects they teach
+            qs = qs.filter(teacher=user)
+        # HOD sees all, so no extra filter
+        
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
