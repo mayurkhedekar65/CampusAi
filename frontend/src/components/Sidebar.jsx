@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, CalendarCheck, BookOpen, Bot, Bell, User, GraduationCap } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, BookOpen, Bot, Bell, User, GraduationCap, Sliders } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { path: '/app/dashboard', name: 'Dashboard', icon: LayoutDashboard, roles: ['student', 'teacher', 'hod'] },
+  { path: '/app/hod-panel', name: 'HOD Control', icon: Sliders, roles: ['hod'] },
   { path: '/app/attendance', name: 'Attendance', icon: CalendarCheck, roles: ['student', 'teacher'] },
-  { path: '/app/notes', name: 'Notes', icon: BookOpen, roles: ['student', 'teacher'] },
+  { path: '/app/notes', name: 'Notes', icon: BookOpen, roles: ['student', 'teacher', 'hod'] },
   { path: '/app/assistant', name: 'AI Assistant', icon: Bot, roles: ['student'] },
   { path: '/app/notifications', name: 'Notifications', icon: Bell, roles: ['student', 'teacher', 'hod'] },
   { path: '/app/profile', name: 'Profile', icon: User, roles: ['student', 'teacher', 'hod'] },
@@ -16,7 +17,7 @@ function Sidebar({ isOpen }) {
   const { user } = useAuth();
   
   // Filter based on role, default to empty array if no user
-  const visibleItems = user ? navItems.filter(item => item.roles.includes(user.role)) : [];
+  const visibleItems = user ? navItems.filter(item => item.roles.includes(user.role?.toLowerCase())) : [];
 
   return (
     <aside className="sidebar">

@@ -10,6 +10,7 @@ import Notes from './pages/Notes';
 import AIAssistant from './pages/AIAssistant';
 import Notifications from './pages/Notifications';
 import Profile from './pages/Profile';
+import HODPanel from './pages/HODPanel';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
             <Route path="assistant" element={<AIAssistant />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />
+            <Route path="hod-panel" element={<HODPanel />} />
           </Route>
         </Routes>
       </BrowserRouter>

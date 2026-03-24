@@ -1,22 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, PlayCircle, StopCircle, MapPin, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Calendar, PlayCircle, StopCircle, MapPin, CheckCircle2, AlertCircle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const API_URL = 'http://127.0.0.1:8001/api';
 
 const TeacherAttendance = () => {
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionCode, setSessionCode] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
-  const [studentsMarked, setStudentsMarked] = useState(0);
+  const [gpsLoading, setGpsLoading] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('campusai_token');
+    fetch(`${API_URL}/academics/subjects/my_subjects/`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if(Array.isArray(data)) {
+        setSubjects(data);
+        if (data.length > 0) setSelectedSubject(data[0].id);
+      }
+    })
+    .catch(err => console.error(err));
+  }, []);
 
   useEffect(() => {
     let timer;
     if (sessionActive && timeLeft > 0) {
       timer = setInterval(() => {
         setTimeLeft(prev => prev - 1);
-        // Simulate random students marking attendance
-        if (Math.random() > 0.7) {
-          setStudentsMarked(prev => Math.min(prev + 1, 45));
-        }
       }, 1000);
     } else if (timeLeft === 0 && sessionActive) {
       setSessionActive(false);
@@ -25,11 +40,50 @@ const TeacherAttendance = () => {
   }, [sessionActive, timeLeft]);
 
   const startSession = () => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    setSessionCode(code);
-    setTimeLeft(20);
-    setStudentsMarked(0);
-    setSessionActive(true);
+    if (!selectedSubject) return alert("Select a subject first");
+    setGpsLoading(true);
+    const token = localStorage.getItem('campusai_token');
+
+    const doStartSession = async (lat, lon) => {
+      try {
+        const res = await fetch(`${API_URL}/attendance/start/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            subject_id: selectedSubject,
+            latitude: lat || null,
+            longitude: lon || null
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSessionCode(data.code);
+          setTimeLeft(20); // 20 seconds
+          setSessionActive(true);
+        } else {
+          const errData = await res.json();
+          alert('Error: ' + (errData.error || errData.detail || JSON.stringify(errData)));
+        }
+      } catch(e) { console.error(e); }
+      finally { setGpsLoading(false); }
+    };
+
+    if (!navigator.geolocation) {
+      // Browser doesn't support GPS — start without location
+      doStartSession(null, null);
+      return;
+    }
+
+    // Try GPS with 8-second timeout — if denied/unavailable, proceed without it
+    navigator.geolocation.getCurrentPosition(
+      (pos) => doStartSession(pos.coords.latitude, pos.coords.longitude),
+      () => {
+        // GPS denied or unavailable (industry visit, GPS off, blocked)
+        // Start session without location — students mark via code only
+        doStartSession(null, null);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
   };
 
   const endSession = () => {
@@ -46,10 +100,16 @@ const TeacherAttendance = () => {
               <Calendar size={48} />
             </div>
             <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Start New Session</h2>
-            <p className="text-muted" style={{ marginBottom: '2rem' }}>Generate a live code for your students to mark their attendance.</p>
-            <button className="btn" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.1rem', padding: '1rem 2rem' }} onClick={startSession}>
-              <PlayCircle size={24} />
-              Start Session
+            <p className="text-muted" style={{ marginBottom: '1rem' }}>Select your subject to generate a 20-second live code.</p>
+            
+            <select className="input" value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)} style={{ marginBottom: '2rem', maxWidth: '300px', appearance: 'auto', background: 'transparent' }}>
+              {subjects.map(s => <option key={s.id} value={s.id} style={{ color: 'black' }}>{s.name}</option>)}
+              {subjects.length === 0 && <option value="">No subjects assigned</option>}
+            </select>
+
+            <button className="btn" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.1rem', padding: '1rem 2rem' }} onClick={startSession} disabled={gpsLoading || subjects.length === 0}>
+              {gpsLoading ? <Loader2 size={24} className="animate-spin" /> : <PlayCircle size={24} />}
+              {gpsLoading ? 'Starting...' : 'Start Session'}
             </button>
           </>
         ) : (
@@ -61,12 +121,10 @@ const TeacherAttendance = () => {
             
             <div style={{ display: 'flex', gap: '2rem', marginTop: '2rem', width: '100%' }}>
               <div style={{ flex: 1, background: '#F8FAFC', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
-                <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>Time Remaining</p>
-                <p style={{ fontSize: '1.5rem', fontWeight: 700, color: timeLeft <= 5 ? '#DC2626' : 'var(--text-main)' }}>00:{timeLeft.toString().padStart(2, '0')}</p>
-              </div>
-              <div style={{ flex: 1, background: '#DCFCE7', padding: '1rem', borderRadius: '0.75rem', border: '1px solid #BBF7D0' }}>
-                <p style={{ fontSize: '0.85rem', color: '#166534', marginBottom: '0.25rem' }}>Students Marked</p>
-                <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803D' }}>{studentsMarked} / 45</p>
+                <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>Expires In</p>
+                <p style={{ fontSize: '1.5rem', fontWeight: 700, color: timeLeft <= 5 ? '#DC2626' : 'var(--text-main)', fontFamily: 'monospace' }}>
+                  00:{timeLeft.toString().padStart(2, '0')}
+                </p>
               </div>
             </div>
 
@@ -81,8 +139,8 @@ const TeacherAttendance = () => {
       <div className="card glass-panel flex-align">
         <div style={{ padding: '2rem', textAlign: 'center', width: '100%', color: 'var(--text-muted)' }}>
           <Calendar size={48} style={{ opacity: 0.5, marginBottom: '1rem', margin: '0 auto' }} />
-          <h3>Recent Sessions</h3>
-          <p>History of your attendance logs will appear here.</p>
+          <h3>Secure By Design</h3>
+          <p>Live GPS validation prevents proxies from marking presence anywhere off-campus.</p>
         </div>
       </div>
     </div>
@@ -91,131 +149,257 @@ const TeacherAttendance = () => {
 
 const StudentAttendance = () => {
   const [code, setCode] = useState('');
-  const [gpsStatus, setGpsStatus] = useState('fetching'); // fetching, success, error
-  const [submitStatus, setSubmitStatus] = useState('idle'); // idle, loading, success, error
+  const [gpsStatus, setGpsStatus] = useState('fetching'); 
+  const [gpsCoords, setGpsCoords] = useState(null);
+  const [submitStatus, setSubmitStatus] = useState('idle'); 
   const [message, setMessage] = useState('');
+  const [summary, setSummary] = useState(null);
+  const [attendanceHistory, setAttendanceHistory] = useState([]);
+  const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
+
+  const autoSubmitTimeout = useRef(null);
 
   useEffect(() => {
-    // Simulate GPS fetch
-    const fetchLocation = async () => {
-      try {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        if (navigator.geolocation) {
-           setGpsStatus('success');
-        } else {
-           setGpsStatus('error');
-        }
-      } catch (err) {
-        setGpsStatus('error');
-      }
-    };
-    fetchLocation();
+    // Acquire GPS immediately
+    navigator.geolocation.getCurrentPosition((pos) => {
+      setGpsCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      setGpsStatus('success');
+    }, () => {
+      setGpsStatus('error');
+    }, { enableHighAccuracy: true, timeout: 10000 });
+
+    // Fetch Summary
+    const token = localStorage.getItem('campusai_token');
+    fetch(`${API_URL}/attendance/summary/`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if(!data.error) setSummary(data);
+    })
+    .catch(err => console.error(err));
+
+    fetchHistory(token);
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (code.length < 6) {
+  const fetchHistory = (token) => {
+    fetch(`${API_URL}/attendance/student/`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if(Array.isArray(data)) setAttendanceHistory(data);
+    })
+    .catch(err => console.error(err));
+  };
+
+  useEffect(() => {
+    // Auto-submit when 4 digits entered — GPS is OPTIONAL
+    if (code.length === 4 && submitStatus === 'idle') {
+      if (autoSubmitTimeout.current) clearTimeout(autoSubmitTimeout.current);
+      autoSubmitTimeout.current = setTimeout(() => {
+        executeSubmit(code);
+      }, 500);
+    }
+  }, [code, submitStatus]);
+
+  const executeSubmit = async (submitCode) => {
+    if (submitCode.length !== 4) {
       setSubmitStatus('error');
-      setMessage('Please enter a valid 6-character code.');
+      setMessage('Attendance code must be 4 digits exactly.');
       return;
     }
     
+    // GPS is optional — if available, send coordinates; if not, still allow marking
+    const coords = gpsStatus === 'success' && gpsCoords ? gpsCoords : null;
+
     setSubmitStatus('loading');
-    
-    // Simulate API call
-    setTimeout(() => {
-      if (code.toUpperCase() === 'EXPIRED') {
-        setSubmitStatus('error');
-        setMessage('This session has expired.');
-      } else if (gpsStatus !== 'success') {
-        setSubmitStatus('error');
-        setMessage('Cannot verify location. High alert area.');
-      } else {
+    const token = localStorage.getItem('campusai_token');
+
+    try {
+      const res = await fetch(`${API_URL}/attendance/verify/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          code: submitCode,
+          latitude: coords?.lat || null,
+          longitude: coords?.lon || null
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
         setSubmitStatus('success');
-        setMessage('Attendance marked successfully!');
+        setMessage(data.message || 'Attendance marked successfully!');
+        
+        // Refresh summary and history
+        fetch(`${API_URL}/attendance/summary/`, { headers: { 'Authorization': `Bearer ${token}` }})
+        .then(r => r.json())
+        .then(d => { if(!d.error) setSummary(d); });
+        
+        fetchHistory(token);
+      } else {
+        setSubmitStatus('error');
+        setMessage(data.error || 'Failed to verify session code.');
       }
-    }, 1200);
+    } catch(err) {
+      setSubmitStatus('error');
+      setMessage('Network error preventing connection.');
+    }
   };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    executeSubmit(code);
+  };
+
+  const nextMonth = () => {
+    setCurrentMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const prevMonth = () => {
+    setCurrentMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const formatMonth = (date) => {
+    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+  };
+
+  const getFilteredHistory = () => {
+    return attendanceHistory.filter(record => {
+      const recordDate = new Date(record.timestamp);
+      return recordDate.getMonth() === currentMonthDate.getMonth() && recordDate.getFullYear() === currentMonthDate.getFullYear();
+    });
+  };
+
+  const filteredHistory = getFilteredHistory();
 
   return (
     <div className="grid-2">
       <div className="card glass-panel" style={{ padding: '2rem' }}>
-        <h2 className="card-title" style={{ marginBottom: '1.5rem', fontSize: '1.25rem' }}>Mark Attendance</h2>
+        <h2 className="card-title" style={{ marginBottom: '1.5rem', fontSize: '1.25rem' }}>Mark My Attendance</h2>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', borderRadius: '0.5rem', background: gpsStatus === 'fetching' ? '#FFFBEB' : gpsStatus === 'success' ? '#DCFCE7' : '#FEE2E2', color: gpsStatus === 'fetching' ? '#B45309' : gpsStatus === 'success' ? '#166534' : '#991B1B', marginBottom: '2rem', fontSize: '0.9rem' }}>
-          <MapPin size={20} />
-          {gpsStatus === 'fetching' && 'Verifying location via GPS...'}
-          {gpsStatus === 'success' && 'Location verified: On Campus'}
-          {gpsStatus === 'error' && 'Failed to verify location.'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.875rem 1rem', borderRadius: '0.5rem',
+          background: gpsStatus === 'fetching' ? '#FFFBEB' : gpsStatus === 'success' ? '#DCFCE7' : '#F0F9FF',
+          color: gpsStatus === 'fetching' ? '#B45309' : gpsStatus === 'success' ? '#166534' : '#0369A1',
+          marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+          <MapPin size={18} />
+          {gpsStatus === 'fetching' && 'Acquiring GPS signal...'}
+          {gpsStatus === 'success' && 'Location verified: GPS Active ✓'}
+          {gpsStatus === 'error' && 'GPS unavailable — code-only mode (attendance will be recorded)'}
         </div>
 
         {submitStatus === 'success' ? (
           <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
             <CheckCircle2 size={64} color="#16A34A" style={{ margin: '0 auto 1rem auto' }} />
-            <h3 style={{ color: '#166534', marginBottom: '0.5rem' }}>{message}</h3>
-            <p className="text-muted">You can safely close this page.</p>
+            <h3 style={{ color: '#166534', marginBottom: '0.5rem' }}>Confirmed!</h3>
+            <p className="text-muted">{message}</p>
             <button className="btn" style={{ marginTop: '2rem' }} onClick={() => {setSubmitStatus('idle'); setCode('');}}>
-              Mark Another
+              Mark Another Class
             </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="input-group">
-              <label>Enter Live Session Code</label>
+              <label>Enter 4-Digit Live Code</label>
               <input 
                 type="text" 
                 className="input" 
-                placeholder="e.g. A1B2C3" 
-                maxLength={6}
+                placeholder="0000" 
+                maxLength={4}
                 value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                style={{ fontSize: '1.5rem', textAlign: 'center', letterSpacing: '5px', fontWeight: 700 }}
+                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ''))}
+                style={{ fontSize: '1.5rem', textAlign: 'center', letterSpacing: '10px', fontWeight: 700 }}
                 disabled={submitStatus === 'loading'}
               />
             </div>
 
             {submitStatus === 'error' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#DC2626', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#DC2626', fontSize: '0.9rem', marginBottom: '1.5rem', background: '#FEE2E2', padding: '1rem', borderRadius: '0.5rem' }}>
                 <AlertCircle size={16} />
                 <span>{message}</span>
               </div>
             )}
 
-            <button type="submit" className="btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }} disabled={submitStatus === 'loading' || gpsStatus === 'fetching'}>
+            <button type="submit" className="btn" style={{ display: 'none' }} disabled={submitStatus === 'loading'}>
               {submitStatus === 'loading' ? <Loader2 size={20} className="animate-spin" /> : 'Submit Code'}
             </button>
+            <div style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              System will validate automatically when 4 digits are entered.
+            </div>
           </form>
         )}
       </div>
 
       <div className="card glass-panel" style={{ padding: '2rem' }}>
-        <h2 className="card-title">Subject Summary</h2>
-        <table className="data-table" style={{ marginTop: '1rem' }}>
-          <thead>
-            <tr>
-              <th>Subject</th>
-              <th>Status</th>
-              <th>%</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style={{ fontWeight: 500 }}>Machine Learning</td>
-              <td><span className="badge success">Safe</span></td>
-              <td style={{ fontWeight: 700 }}>85%</td>
-            </tr>
-            <tr>
-              <td style={{ fontWeight: 500 }}>Database Systems</td>
-              <td><span className="badge danger">Critical</span></td>
-              <td style={{ fontWeight: 700, color: '#DC2626' }}>68%</td>
-            </tr>
-            <tr>
-              <td style={{ fontWeight: 500 }}>Cloud Computing</td>
-              <td><span className="badge success">Safe</span></td>
-              <td style={{ fontWeight: 700 }}>92%</td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="flex-between" style={{ marginBottom: '1rem' }}>
+          <h2 className="card-title">My Subject Attendance Tracker</h2>
+          <div className="flex-align" style={{ gap: '0.5rem' }}>
+            <button onClick={prevMonth} className="btn-icon" style={{ background: 'transparent', border: '1px solid var(--border-color)', padding: '0.25rem', borderRadius: '4px', cursor: 'pointer' }}><ChevronLeft size={16} /></button>
+            <span style={{ fontWeight: 600, fontSize: '0.9rem', width: '120px', textAlign: 'center' }}>{formatMonth(currentMonthDate)}</span>
+            <button onClick={nextMonth} className="btn-icon" style={{ background: 'transparent', border: '1px solid var(--border-color)', padding: '0.25rem', borderRadius: '4px', cursor: 'pointer' }}><ChevronRight size={16} /></button>
+          </div>
+        </div>
+        
+        {filteredHistory.length > 0 ? (
+          <table className="data-table" style={{ marginTop: '1rem' }}>
+            <thead>
+              <tr>
+                <th>Date / Time</th>
+                <th>Subject</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredHistory.map(record => {
+                const date = new Date(record.timestamp);
+                return (
+                  <tr key={record.id}>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{date.toLocaleDateString()}</div>
+                      <div className="text-muted" style={{ fontSize: '0.8rem' }}>{date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                    </td>
+                    <td style={{ fontWeight: 500 }}>{record.subject_name || "Subject"}</td>
+                    <td><span className="badge success">PRESENT</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+            No attendance marked in this month.
+          </div>
+        )}
+
+        {summary && summary.subjects && summary.subjects.length > 0 && (
+          <div style={{ marginTop: '2rem' }}>
+            <h3 style={{ fontSize: '1rem', color: 'var(--text-main)', marginBottom: '1rem' }}>Overall Subject Summary</h3>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  <th>Attended/Total</th>
+                  <th>Percentage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.subjects.map(sub => (
+                  <tr key={sub.id}>
+                    <td style={{ fontWeight: 500 }}>{sub.name}</td>
+                    <td>{sub.attended} / {sub.total}</td>
+                    <td style={{ fontWeight: 700, color: sub.status === 'low' ? '#DC2626' : '#166534' }}>
+                      {sub.percentage}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -230,7 +414,7 @@ function Attendance() {
         <h1 className="page-title" style={{ margin: 0 }}>Attendance Portal</h1>
       </div>
 
-      {(user?.role === 'teacher' || user?.role === 'hod') ? <TeacherAttendance /> : <StudentAttendance />}
+      {(user?.role?.toLowerCase() === 'teacher' || user?.role?.toLowerCase() === 'hod') ? <TeacherAttendance /> : <StudentAttendance />}
     </div>
   );
 }

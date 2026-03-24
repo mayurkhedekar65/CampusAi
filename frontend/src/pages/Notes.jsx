@@ -1,52 +1,86 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download, FileText, Search, UploadCloud, X, PlusCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-const initialNotes = [
-  { id: 1, title: 'Introduction to Neural Networks', subject: 'Machine Learning', date: '21 Mar 2026', size: '2.4 MB' },
-  { id: 2, title: 'SQL Joins Cheat Sheet', subject: 'Database Systems', date: '19 Mar 2026', size: '1.1 MB' },
-  { id: 3, title: 'Docker Containers Guide', subject: 'Cloud Computing', date: '15 Mar 2026', size: '3.8 MB' },
-  { id: 4, title: 'React Hooks Deep Dive', subject: 'Web Development', date: '10 Mar 2026', size: '1.5 MB' },
-];
 
 function Notes() {
   const { user } = useAuth();
-  const [notes, setNotes] = useState(initialNotes);
+  const [notes, setNotes] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showUploadMsg, setShowUploadMsg] = useState(false);
+  const [showUploadMsg, setShowUploadMsg] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [loadingNotes, setLoadingNotes] = useState(true);
   
   // Upload Form State
   const [showUploadForm, setShowUploadForm] = useState(false);
-  const [uploadData, setUploadData] = useState({ title: '', subject: '' });
+  const [uploadData, setUploadData] = useState({ title: '', subject: '', file: null });
+
+  useEffect(() => {
+    const token = localStorage.getItem('campusai_token');
+    
+    // Fetch Notes
+    fetch('http://127.0.0.1:8001/api/notes/', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(r => r.json())
+    .then(data => { setNotes(data); setLoadingNotes(false); })
+    .catch(e => { console.error('Error fetching notes', e); setLoadingNotes(false); });
+
+    // Fetch Subjects for Dropdown
+    if (user?.role === 'TEACHER' || user?.role === 'HOD') {
+        const endpoint = user?.role === 'TEACHER' ? 'http://127.0.0.1:8001/api/academics/subjects/my_subjects/' : 'http://127.0.0.1:8001/api/academics/subjects/';
+        fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` }})
+        .then(r => r.json())
+        .then(data => setSubjects(data))
+        .catch(e => console.error('Error fetching subjects', e));
+    }
+  }, [user]);
 
   const filteredNotes = notes.filter(note => 
-    note.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    note.subject.toLowerCase().includes(searchTerm.toLowerCase())
+    (note.title && note.title.toLowerCase().includes(searchTerm.toLowerCase())) || 
+    (note.subject_name && note.subject_name.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const handleUploadSubmit = (e) => {
+  const handleUploadSubmit = async (e) => {
     e.preventDefault();
-    if (!uploadData.title || !uploadData.subject) return;
+    if (!uploadData.title || !uploadData.subject || !uploadData.file) {
+      setShowUploadMsg('Please fill out all fields and attach a file.');
+      setTimeout(() => setShowUploadMsg(''), 3000);
+      return;
+    }
     
     setIsUploading(true);
+    const token = localStorage.getItem('campusai_token');
     
-    // Simulate API upload
-    setTimeout(() => {
-      const newNote = {
-        id: Date.now(),
-        title: uploadData.title,
-        subject: uploadData.subject,
-        date: new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }),
-        size: (Math.random() * 5 + 0.5).toFixed(1) + ' MB'
-      };
-      setNotes([newNote, ...notes]);
+    const formData = new FormData();
+    formData.append('title', uploadData.title);
+    formData.append('subject', uploadData.subject);
+    formData.append('file', uploadData.file);
+
+    try {
+      const res = await fetch('http://127.0.0.1:8001/api/notes/upload/', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      
+      if (res.ok) {
+        const newNote = await res.json();
+        setNotes([newNote, ...notes]);
+        setShowUploadForm(false);
+        setUploadData({ title: '', subject: '', file: null });
+        setShowUploadMsg('Note uploaded successfully!');
+      } else {
+        const errData = await res.json();
+        setShowUploadMsg('Failed to upload: ' + JSON.stringify(errData));
+      }
+    } catch (e) {
+      setShowUploadMsg('Network error while uploading.');
+    } finally {
       setIsUploading(false);
-      setShowUploadForm(false);
-      setUploadData({ title: '', subject: '' });
-      setShowUploadMsg(true);
-      setTimeout(() => setShowUploadMsg(false), 3000);
-    }, 1500);
+      setTimeout(() => setShowUploadMsg(''), 3000);
+    }
   };
 
   return (
@@ -54,7 +88,7 @@ function Notes() {
       <div className="flex-between" style={{ marginBottom: '2rem' }}>
         <h1 className="page-title" style={{ margin: 0 }}>Subject Notes Repository</h1>
         
-        {(user?.role === 'teacher' || user?.role === 'hod') && (
+        {(user?.role?.toLowerCase() === 'teacher' || user?.role?.toLowerCase() === 'hod') && (
           <button 
             className="btn flex-align" 
             style={{ width: 'auto', padding: '0.75rem 1.5rem', display: showUploadForm ? 'none' : 'flex' }}
@@ -67,9 +101,9 @@ function Notes() {
       </div>
 
       {showUploadMsg && (
-        <div style={{ background: '#DCFCE7', color: '#166534', padding: '1rem', borderRadius: '0.5rem', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ background: showUploadMsg.includes('success') ? '#DCFCE7' : '#FEE2E2', color: showUploadMsg.includes('success') ? '#166534' : '#991B1B', padding: '1rem', borderRadius: '0.5rem', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <FileText size={20} />
-          <span>Note uploaded successfully!</span>
+          <span>{showUploadMsg}</span>
         </div>
       )}
 
@@ -97,23 +131,34 @@ function Notes() {
             </div>
             <div className="input-group">
               <label>Subject</label>
-              <input 
-                type="text" 
+              <select 
                 className="input" 
-                placeholder="e.g. Calculus II" 
-                value={uploadData.subject}
+                value={uploadData.subject} 
                 onChange={e => setUploadData({...uploadData, subject: e.target.value})}
                 required
                 disabled={isUploading}
-              />
+              >
+                <option value="">Select a Subject...</option>
+                {subjects.map(sub => (
+                  <option key={sub.id} value={sub.id}>{sub.name}</option>
+                ))}
+              </select>
             </div>
             
             <div className="input-group" style={{ gridColumn: '1 / -1' }}>
               <label>Select File</label>
-              <div style={{ border: '2px dashed var(--border-color)', padding: '2rem', textAlign: 'center', borderRadius: 'var(--radius)', background: '#F8FAFC', cursor: 'pointer' }}>
-                <PlusCircle size={32} color="var(--text-muted)" style={{ margin: '0 auto 1rem auto' }} />
-                <p className="text-muted">Click to browse or drag and drop your PDF, DOCX, or PPTX file here</p>
-              </div>
+              <label htmlFor="note-file-upload" style={{ border: '2px dashed var(--border-color)', padding: '2rem', textAlign: 'center', borderRadius: 'var(--radius)', background: '#F8FAFC', cursor: 'pointer', display: 'block' }}>
+                <PlusCircle size={32} color={uploadData.file ? 'var(--primary)' : 'var(--text-muted)'} style={{ margin: '0 auto 1rem auto' }} />
+                <p className={uploadData.file ? 'text-primary' : 'text-muted'} style={{ fontWeight: uploadData.file ? 600 : 400 }}>
+                  {uploadData.file ? `Selected: ${uploadData.file.name}` : 'Click to browse your PDF, DOCX, or PPTX file here'}
+                </p>
+                <input 
+                  id="note-file-upload" 
+                  type="file" 
+                  style={{ display: 'none' }} 
+                  onChange={e => setUploadData({...uploadData, file: e.target.files[0]})}
+                />
+              </label>
             </div>
 
             <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
@@ -139,26 +184,28 @@ function Notes() {
       </div>
 
       <div className="grid-3">
-        {filteredNotes.map(note => (
+        {loadingNotes ? (
+           <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)', padding: '4rem 0' }}><Loader2 className="animate-spin" size={32} style={{ margin: '0 auto' }} /></div>
+        ) : filteredNotes.map(note => (
           <div key={note.id} className="card hoverable glass-panel flex-align" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '1.25rem', padding: '1.5rem', transition: 'all 0.3s' }}>
             <div className="flex-between" style={{ width: '100%' }}>
               <div style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '1rem', borderRadius: '12px' }}>
                 <FileText size={28} />
               </div>
-              <span className="badge" style={{ background: '#F1F5F9', color: 'var(--text-main)', padding: '0.4rem 0.8rem', fontSize: '0.8rem', fontWeight: 600 }}>{note.subject}</span>
+              <span className="badge" style={{ background: '#F1F5F9', color: 'var(--text-main)', padding: '0.4rem 0.8rem', fontSize: '0.8rem', fontWeight: 600 }}>{note.subject_name || note.subject}</span>
             </div>
             
             <div style={{ width: '100%' }}>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem', lineHeight: 1.3 }}>{note.title}</h3>
               <div className="flex-between text-muted" style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                <span>{note.date}</span>
-                <span>{note.size}</span>
+                <span>{new Date(note.created_at || note.date).toLocaleDateString()}</span>
+                <span>File</span>
               </div>
             </div>
 
-            <button className="btn flex-align" style={{ width: '100%', background: 'transparent', color: 'var(--primary)', padding: '0.75rem', borderRadius: '8px', justifyContent: 'center', transition: 'all 0.2s', fontWeight: 600, marginTop: 'auto', border: '2px solid var(--primary-light)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'var(--primary)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.borderColor = 'var(--primary-light)'; }}>
-              <Download size={18} /> Download PDF
-            </button>
+            <a href={`http://127.0.0.1:8001${note.file}`} target="_blank" rel="noopener noreferrer" className="btn flex-align" style={{ width: '100%', background: 'transparent', color: 'var(--primary)', padding: '0.75rem', borderRadius: '8px', justifyContent: 'center', transition: 'all 0.2s', fontWeight: 600, marginTop: 'auto', border: '2px solid var(--primary-light)', textDecoration: 'none' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'var(--primary)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.borderColor = 'var(--primary-light)'; }}>
+              <Download size={18} /> Download
+            </a>
           </div>
         ))}
 

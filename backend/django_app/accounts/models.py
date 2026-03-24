@@ -29,6 +29,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     department = models.ForeignKey('academics.Department', on_delete=models.SET_NULL, null=True, blank=True)
     semester = models.IntegerField(null=True, blank=True)
+    cgpa = models.FloatField(default=0.0)
+    credits = models.IntegerField(default=0)
     
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

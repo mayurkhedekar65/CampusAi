@@ -40,3 +40,64 @@ class ProfileView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+class StudentListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role not in ['TEACHER', 'HOD']:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+        
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        queryset = User.objects.filter(role='STUDENT')
+        
+        # HOD automatically scoped to their own department
+        if request.user.role == 'HOD':
+            if not request.user.department:
+                return Response([], status=status.HTTP_200_OK)
+            queryset = queryset.filter(department=request.user.department)
+        else:
+            # Teacher: optional department filter
+            department_id = request.query_params.get('department')
+            if department_id:
+                queryset = queryset.filter(department_id=department_id)
+
+        # Both can filter by semester
+        semester = request.query_params.get('semester')
+        if semester:
+            queryset = queryset.filter(semester=semester)
+            
+        serializer = UserSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+class UpdateStudentAcademicsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        if request.user.role not in ['TEACHER', 'HOD']:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        try:
+            queryset = User.objects.filter(role='STUDENT')
+            # HOD can only update students in their department
+            if request.user.role == 'HOD' and request.user.department:
+                queryset = queryset.filter(department=request.user.department)
+            student = queryset.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'error': 'Student not found in your department'}, status=status.HTTP_404_NOT_FOUND)
+            
+        cgpa = request.data.get('cgpa')
+        credits = request.data.get('credits')
+        
+        if cgpa is not None:
+            student.cgpa = float(cgpa)
+        if credits is not None:
+            student.credits = int(credits)
+            
+        student.save()
+        return Response({'success': True, 'cgpa': student.cgpa, 'credits': student.credits})

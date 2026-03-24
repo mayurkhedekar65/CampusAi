@@ -20,6 +20,11 @@ def calc_distance(lat1, lon1, lat2, lon2):
     a = math.sin(delta_phi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
+class IsTeacherOrHOD(permissions.BasePermission):
+    """Allow TEACHER role — GPS is optional, session can be from any location."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in ('TEACHER', 'HOD')
+
 class IsTeacher(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == 'TEACHER'
@@ -29,23 +34,35 @@ class IsStudent(permissions.BasePermission):
         return request.user.is_authenticated and request.user.role == 'STUDENT'
 
 class StartSessionView(views.APIView):
-    permission_classes = [IsTeacher]
+    permission_classes = [IsTeacherOrHOD]
 
     def post(self, request):
         subject_id = request.data.get('subject_id')
-        lat = request.data.get('latitude')
-        lon = request.data.get('longitude')
+        # GPS is optional — teacher may be on industry visit or off-campus
+        lat = request.data.get('latitude')   # may be None
+        lon = request.data.get('longitude')  # may be None
+
         try:
             subject = Subject.objects.get(id=subject_id, teacher=request.user)
         except Subject.DoesNotExist:
-            return Response({'error': 'Subject not found or unauthorized'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Deactivate old sessions
+            # Fallback: if subject exists but teacher field not yet set, allow HOD to use it
+            try:
+                subject = Subject.objects.get(id=subject_id)
+                if subject.teacher is not None and subject.teacher != request.user:
+                    return Response({'error': 'This subject is assigned to another teacher'}, status=status.HTTP_403_FORBIDDEN)
+                # Assign teacher on the fly if not set
+                if subject.teacher is None:
+                    subject.teacher = request.user
+                    subject.save()
+            except Subject.DoesNotExist:
+                return Response({'error': 'Subject not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Deactivate any existing active sessions for this subject
         AttendanceSession.objects.filter(subject=subject, is_active=True).update(is_active=False)
-        
+
         code = str(random.randint(1000, 9999))
         expires_at = timezone.now() + timedelta(seconds=20)
-        
+
         session = AttendanceSession.objects.create(
             subject=subject, teacher=request.user, code=code, expires_at=expires_at,
             latitude=lat, longitude=lon, is_active=True
@@ -54,6 +71,7 @@ class StartSessionView(views.APIView):
             'session_id': session.id,
             'code': code,
             'expires_at': expires_at,
+            'location_based': bool(lat and lon),
         }, status=status.HTTP_201_CREATED)
 
 class VerifyAttendanceView(views.APIView):
@@ -143,8 +161,47 @@ class AttendanceSummaryView(views.APIView):
             })
             
         overall_percentage = round((attended_overall / total_overall * 100), 1) if total_overall > 0 else 0
-        
         return Response({
             'overall_percentage': overall_percentage,
             'subjects': subject_data
+        })
+
+class TeacherSummaryView(views.APIView):
+    permission_classes = [IsTeacher]
+
+    def get(self, request):
+        user = request.user
+        subjects = Subject.objects.filter(teacher=user)
+        
+        assigned_subjects_count = subjects.count()
+        today = timezone.now().date()
+        
+        active_sessions = AttendanceSession.objects.filter(subject__in=subjects, is_active=True).count()
+        todays_sessions = AttendanceSession.objects.filter(subject__in=subjects, expires_at__date=today).count()
+        
+        subject_overview = []
+        for sub in subjects:
+            total_sessions = AttendanceSession.objects.filter(subject=sub).count()
+            
+            if total_sessions > 0:
+                total_attendances = Attendance.objects.filter(session__subject=sub).count()
+                total_students_enrolled = sub.department.user_set.filter(role='STUDENT', semester=sub.semester).count()
+                
+                max_possible = total_sessions * total_students_enrolled
+                percentage = round((total_attendances / max_possible * 100), 1) if max_possible > 0 else 0
+            else:
+                percentage = 0
+                
+            subject_overview.append({
+                'id': sub.id,
+                'name': sub.name,
+                'total_sessions': total_sessions,
+                'attendance_percentage': percentage
+            })
+            
+        return Response({
+            'assigned_subjects': assigned_subjects_count,
+            'active_sessions': active_sessions,
+            'todays_sessions': todays_sessions,
+            'subject_overview': subject_overview
         })
