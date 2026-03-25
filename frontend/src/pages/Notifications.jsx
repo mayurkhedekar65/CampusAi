@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, BellOff, CalendarPlus, Check, Trash2, BookOpen, Calendar, X, Loader2, AlertTriangle, Clock } from 'lucide-react';
+import { Bell, BellOff, CalendarPlus, Check, Trash2, BookOpen, Calendar, X, Loader2, AlertTriangle, Clock, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const API = 'http://127.0.0.1:8001/api';
@@ -29,7 +29,7 @@ function Notifications() {
 
   // HOD/Teacher create panel
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', notification_type: 'academic', target_semester: '' });
+  const [form, setForm] = useState({ title: '', description: '', notification_type: 'academic', target_semester: '', file: null });
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -40,7 +40,27 @@ function Notifications() {
         const res = await authFetch(`${API}/notifications/`);
         if (res.ok) {
           const data = await res.json();
-          setNotifications(Array.isArray(data) ? data : []);
+          const notifs = Array.isArray(data) ? data : [];
+          setNotifications(notifs);
+
+          if (user?.role === 'STUDENT') {
+            const stored = JSON.parse(localStorage.getItem('campusai_reminders') || '[]');
+            const newReminders = [];
+            notifs.forEach(n => {
+              if (n.title.toLowerCase().includes('assignment') || n.description.toLowerCase().includes('assignment') || n.notification_type === 'reminder') {
+                if (!stored.find(r => r.notif_id === n.id)) {
+                  newReminders.push({ id: Date.now() + Math.random(), text: `Task: ${n.title}`, done: false, date: new Date(n.created_at || Date.now()).toLocaleDateString(), notif_id: n.id });
+                }
+              }
+            });
+            if (newReminders.length > 0) {
+              setReminders(prev => {
+                const updated = [...newReminders, ...prev];
+                localStorage.setItem('campusai_reminders', JSON.stringify(updated));
+                return updated;
+              });
+            }
+          }
         }
       } catch (e) { console.error(e); }
       setLoading(false);
@@ -75,14 +95,31 @@ function Notifications() {
     if (!form.title || !form.description) return;
     setSending(true);
     try {
-      const res = await authFetch(`${API}/notifications/`, {
-        method: 'POST',
-        body: JSON.stringify({ ...form, target_semester: form.target_semester || null })
-      });
+      let res;
+      if (form.file) {
+        const formData = new FormData();
+        formData.append('title', form.title);
+        formData.append('description', form.description);
+        formData.append('notification_type', form.notification_type);
+        if (form.target_semester) formData.append('target_semester', form.target_semester);
+        formData.append('file', form.file);
+
+        res = await fetch(`${API}/notifications/`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token()}` },
+          body: formData
+        });
+      } else {
+        res = await authFetch(`${API}/notifications/`, {
+          method: 'POST',
+          body: JSON.stringify({ title: form.title, description: form.description, notification_type: form.notification_type, target_semester: form.target_semester || null })
+        });
+      }
+
       if (res.ok) {
         const n = await res.json();
         setNotifications([n, ...notifications]);
-        setForm({ title: '', description: '', notification_type: 'academic', target_semester: '' });
+        setForm({ title: '', description: '', notification_type: 'academic', target_semester: '', file: null });
         setShowCreate(false);
         setToast('Notification sent!');
       } else {
@@ -143,7 +180,11 @@ function Notifications() {
                 {[1,2,3,4,5,6,7,8].map(s => <option key={s} value={s}>Semester {s} only</option>)}
               </select>
             </div>
-            <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+            <div className="input-group" style={{ gridColumn: '1 / -1' }}>
+              <label>Attachment (PDF/Image) - Optional</label>
+              <input type="file" className="input" onChange={e => setForm({...form, file: e.target.files[0]})} accept=".pdf,image/*" style={{ background: 'white' }} />
+            </div>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
               <button type="button" className="btn" style={{ background: '#F1F5F9', color: 'var(--text-main)' }} onClick={() => setShowCreate(false)}>Cancel</button>
               <button type="submit" className="btn flex-align" disabled={sending} style={{ gap: '0.5rem' }}>
                 {sending ? <Loader2 size={18} className="animate-spin" /> : <Bell size={18} />} Send Now
@@ -187,6 +228,13 @@ function Notifications() {
                   </div>
                   <h4 style={{ fontWeight: 700, marginBottom: '0.4rem', fontSize: '1rem' }}>{n.title}</h4>
                   <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>{n.description}</p>
+                  
+                  {n.file && (
+                    <a href={n.file.startsWith('http') ? n.file : `http://127.0.0.1:8001${n.file}`} target="_blank" rel="noopener noreferrer" className="btn flex-align" style={{ marginTop: '0.75rem', padding: '0.4rem 0.8rem', background: 'white', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.8rem', width: 'fit-content', textDecoration: 'none', gap: '0.5rem' }}>
+                      <FileText size={14} color="var(--primary)" /> View Attachment
+                    </a>
+                  )}
+
                   <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#94A3B8', display: 'flex', gap: '1rem' }}>
                     <span>From: {n.creator_name || 'Staff'}</span>
                     <span>{n.target_semester ? `→ Sem ${n.target_semester}` : '→ All'}</span>
