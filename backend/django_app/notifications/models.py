@@ -16,6 +16,7 @@ class Notification(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_notifications')
     department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='notifications')
     target_semester = models.IntegerField(null=True, blank=True, help_text="Null = all semesters")
+    file = models.FileField(upload_to='notifications/files/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
